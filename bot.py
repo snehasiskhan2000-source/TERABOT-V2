@@ -1,59 +1,63 @@
 import os
-import asyncio
 import requests
 from flask import Flask
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-# Environment variables
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
+# 🔐 Environment Variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 XAPI_KEY = os.getenv("XAPI_KEY")
 FORCE_CHANNEL = os.getenv("FORCE_CHANNEL")
 
-# Pyrogram app
-bot = Client(
-    "terabot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN
-)
+# 🤖 Telegram App
+app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# Force Join Check
-async def check_join(client, user_id):
+# 🔎 Force Join Check
+async def check_join(user_id, context):
     try:
-        await client.get_chat_member(FORCE_CHANNEL, user_id)
-        return True
+        member = await context.bot.get_chat_member(f"@{FORCE_CHANNEL}", user_id)
+        return member.status in ["member", "administrator", "creator"]
     except:
         return False
 
 
-@bot.on_message(filters.command("start"))
-async def start_handler(client, message):
-    user = message.from_user
+# 🚀 Start Command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
 
-    if not await check_join(client, user.id):
-        return await message.reply(
-            "🚨 Join our channel to use this bot.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{FORCE_CHANNEL}")]
-            ])
+    if not await check_join(user.id, context):
+        keyboard = [
+            [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{FORCE_CHANNEL}")]
+        ]
+        await update.message.reply_text(
+            "🚨 You must join our channel to use this bot.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
+        return
 
-    await message.reply(
-        f"🔥 Welcome {user.first_name}\n\nSend TeraBox link now!"
+    await update.message.reply_text(
+        f"🔥 *TeraBox Downloader Pro*\n\n"
+        f"👋 Welcome {user.first_name}\n\n"
+        f"📥 Send your TeraBox link now!",
+        parse_mode="Markdown",
     )
 
 
-@bot.on_message(filters.private & filters.text)
-async def download_handler(client, message):
-    link = message.text.strip()
+# 📥 Download Handler
+async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    link = update.message.text.strip()
 
-    if "terabox" not in link:
-        return await message.reply("❌ Send valid TeraBox link.")
+    if "terabox" not in link.lower():
+        await update.message.reply_text("❌ Please send a valid TeraBox link.")
+        return
 
-    msg = await message.reply("⏳ Processing...")
+    msg = await update.message.reply_text("⏳ Processing your link...")
 
     api_url = f"https://xapiverse.com/api/terabox-pro?apikey={XAPI_KEY}&url={link}"
 
@@ -61,39 +65,43 @@ async def download_handler(client, message):
         res = requests.get(api_url).json()
 
         if not res.get("status"):
-            return await msg.edit("❌ Failed to fetch file.")
+            await msg.edit_text("❌ Failed to fetch file.")
+            return
 
         file_name = res["data"]["file_name"]
         download_link = res["data"]["download_link"]
 
-        await msg.edit(
-            f"✅ File Ready\n\n📁 {file_name}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬇ Download", url=download_link)]
-            ])
+        keyboard = [
+            [InlineKeyboardButton("⬇ Download File", url=download_link)]
+        ]
+
+        await msg.edit_text(
+            f"✅ *File Ready!*\n\n📁 {file_name}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-    except:
-        await msg.edit("⚠ API Error")
+    except Exception as e:
+        await msg.edit_text("⚠ API Error. Try again later.")
 
 
-# Flask app (Render requires port binding)
+# 🔗 Add Handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
+
+
+# 🌐 Flask (Render Port Binding)
 web = Flask(__name__)
 
 @web.route("/")
 def home():
-    return "Bot is running"
-
-async def main():
-    await bot.start()
-    await bot.idle()
+    return "Bot is running!"
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    import threading
 
-    # Run bot in background
-    loop.create_task(main())
+    # Run bot in background thread
+    threading.Thread(target=lambda: app.run_polling()).start()
 
-    # Run Flask on Render port
+    # Run Flask
     web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
