@@ -1,4 +1,5 @@
 import os
+import asyncio
 import requests
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -9,16 +10,12 @@ from telegram.ext import (
     filters,
 )
 
-# 🔐 ENV VARIABLES
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 XAPI_KEY = os.getenv("XAPI_KEY")
 FORCE_CHANNEL = os.getenv("FORCE_CHANNEL")
 
 PORT = int(os.environ.get("PORT", 10000))
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # Auto provided by Render
-
-# 🤖 Build Application
-app = Application.builder().token(BOT_TOKEN).build()
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 
 # 🔎 Force Join Check
@@ -60,7 +57,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Please send a valid TeraBox link.")
         return
 
-    msg = await update.message.reply_text("⏳ Processing your link...")
+    msg = await update.message.reply_text("⏳ Processing...")
 
     api_url = f"https://xapiverse.com/api/terabox-pro?apikey={XAPI_KEY}&url={link}"
 
@@ -85,18 +82,28 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     except:
-        await msg.edit_text("⚠ API Error. Try again later.")
+        await msg.edit_text("⚠ API Error")
 
 
-# 🔗 Add Handlers
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
+# 🔧 Create Application
+application = Application.builder().token(BOT_TOKEN).build()
+
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
 
-# 🚀 Start Webhook (Render Compatible)
-if __name__ == "__main__":
-    app.run_webhook(
+# 🚀 Proper Async Startup (Python 3.14 Fix)
+async def main():
+    await application.initialize()
+    await application.start()
+    await application.bot.set_webhook(f"{RENDER_URL}/")
+    await application.updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
         webhook_url=f"{RENDER_URL}/",
-        )
+    )
+    await application.updater.idle()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
