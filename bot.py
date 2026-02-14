@@ -1,22 +1,25 @@
 import os
 import requests
-from flask import Flask
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
     filters,
 )
 
-# 🔐 Environment Variables
+# 🔐 ENV VARIABLES
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 XAPI_KEY = os.getenv("XAPI_KEY")
 FORCE_CHANNEL = os.getenv("FORCE_CHANNEL")
 
-# 🤖 Telegram App
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+PORT = int(os.environ.get("PORT", 10000))
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # Auto provided by Render
+
+# 🤖 Build Application
+app = Application.builder().token(BOT_TOKEN).build()
+
 
 # 🔎 Force Join Check
 async def check_join(user_id, context):
@@ -81,7 +84,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-    except Exception as e:
+    except:
         await msg.edit_text("⚠ API Error. Try again later.")
 
 
@@ -90,18 +93,10 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
 
 
-# 🌐 Flask (Render Port Binding)
-web = Flask(__name__)
-
-@web.route("/")
-def home():
-    return "Bot is running!"
-
+# 🚀 Start Webhook (Render Compatible)
 if __name__ == "__main__":
-    import threading
-
-    # Run bot in background thread
-    threading.Thread(target=lambda: app.run_polling()).start()
-
-    # Run Flask
-    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{RENDER_URL}/",
+        )
