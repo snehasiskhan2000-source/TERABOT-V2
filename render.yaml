@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: terabot-v2
+    runtime: python
+    plan: free
+    buildCommand: ""
+    startCommand: python bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.6
